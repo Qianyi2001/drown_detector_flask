@@ -3,15 +3,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Drowning Detection</title>
+    <meta charset="utf-8">
+    <title>Real-time Drowning Detection</title>
 </head>
 <body>
-  <h1>Drowning Detection</h1>
-  <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/upload">
-    <label for="videoFile">Select a video:</label>
-    <input type="file" name="video" id="videoFile" accept="video/*" />
-    <button type="submit">Upload</button>
-  </form>
+    <h1>Real-time Drowning Detection</h1>
+    <!-- 在这里嵌入实时推流 -->
+    <img src="{{ url_for('video_feed') }}" width="720" />
 </body>
 </html>
