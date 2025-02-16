@@ -4,25 +4,50 @@
 {% block scripts %}
 {{ super() }}
 <script>
-  function startProcessing(filename) {
+  // ------- Option 1: Real-time -------
+  function startRealtime(filename) {
+    // 设置 <img> 的 src
+    const img = document.getElementById("realtimeImg");
+    img.src = `/processing_stream?file=${filename}`;
+  }
+
+  function stopRealtime() {
+    // 前端把 <img>.src 清空，后端也设置 stop_realtime = True
+    const img = document.getElementById("realtimeImg");
+    img.src = "";
+    fetch("/stop_realtime", { method: "POST" })
+      .then(res => res.json())
+      .then(data => {
+        console.log("Stop Real-time:", data);
+      });
+  }
+
+  // ------- Option 2: Offline with Progress -------
+  function startOffline(filename) {
     const progressContainer = document.getElementById("progressContainer");
     const progressBar = document.getElementById("progressBar");
     const progressLabel = document.getElementById("progressLabel");
     const downloadLink = document.getElementById("downloadLink");
 
-    // 显示进度条
     progressContainer.style.display = "block";
     progressBar.style.width = "0%";
     progressLabel.textContent = "0%";
     downloadLink.style.display = "none";
 
-    // 发请求到 /download_processed?file=xxx
     fetch(`/download_processed?file=${filename}`)
       .then(response => response.json())
       .then(data => {
         if (data.status === "processing") {
           checkProgress();
         }
+      });
+  }
+
+  function stopOffline() {
+    fetch("/stop_offline", { method: "POST" })
+      .then(res => res.json())
+      .then(data => {
+        console.log("Stop Offline:", data);
       });
   }
 
@@ -37,12 +62,19 @@
         progressBar.style.width = data.progress + "%";
         progressLabel.textContent = data.progress + "%";
 
+        if (data.stopped) {
+          // 用户中途 stop
+          progressLabel.textContent = "Stopped at " + data.progress + "%";
+          downloadLink.style.display = "none"; // 没完成就不让下载
+          return;
+        }
+
         if (data.done) {
           progressLabel.textContent = "Processing Complete!";
           downloadLink.href = `/outputs/processed_${data.filename}`;
           downloadLink.style.display = "inline-block";
         } else {
-          setTimeout(checkProgress, 1000); // 1秒后再刷新
+          setTimeout(checkProgress, 1000); // 1秒后再刷
         }
       });
   }
@@ -53,17 +85,20 @@
 <h1>Video Uploaded Successfully</h1>
 <p>File name: <strong>{{ filename }}</strong></p>
 
+<!-- Option 1: Real-time -->
 <div class="my-4">
-  <h4>Option 1: Real-time Processing Stream</h4>
-  <img src="{{ url_for('processing_stream') }}?file={{ filename }}"
-       class="img-fluid border" alt="Realtime Stream"/>
+  <h4>Option 1: Real-time Detection</h4>
+  <button class="btn btn-primary" onclick="startRealtime('{{ filename }}')">Start Real-time</button>
+  <button class="btn btn-danger" onclick="stopRealtime()">Stop Real-time</button>
+  <br>
+  <img id="realtimeImg" class="img-fluid border mt-3" alt="Realtime Stream"/>
 </div>
 
+<!-- Option 2: Offline -->
 <div class="my-4">
-  <h4>Option 2: Offline Process with Progress</h4>
-  <button class="btn btn-primary" onclick="startProcessing('{{ filename }}')">
-    Start Processing
-  </button>
+  <h4>Option 2: Offline Processing with Progress</h4>
+  <button class="btn btn-success" onclick="startOffline('{{ filename }}')">Start Offline</button>
+  <button class="btn btn-danger" onclick="stopOffline()">Stop Offline</button>
 
   <!-- 进度条 -->
   <div class="mt-3" id="progressContainer" style="display:none;">
@@ -76,7 +111,7 @@
   </div>
 
   <!-- 下载链接(处理完再显示) -->
-  <a id="downloadLink" class="btn btn-success mt-3" style="display:none;">Download Processed Video</a>
+  <a id="downloadLink" class="btn btn-info mt-3" style="display:none;">Download Processed Video</a>
 </div>
 
 <a href="{{ url_for('index') }}" class="btn btn-secondary">Back to Home</a>

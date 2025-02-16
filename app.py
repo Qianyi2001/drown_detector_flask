@@ -24,7 +24,7 @@ class DrowningDetector:
                  yolo_weights="yolov8l.pt",
                  skip_frames=10,
                  padding=20,
-                 conf_thres=0.3,
+                 conf_thres=0.1,
                  iou_thres=0.4,
                  alert_threshold=0.95,
                  history_length=6):
@@ -186,7 +186,7 @@ app = Flask(__name__, template_folder="templates")
 CORS(app)
 
 # 全局进度状态，用于轮询
-progress_status = {"progress": 0, "done": False, "filename": ""}
+progress_status = {"progress": 0, "done": False, "filename": "", "stopped": False}
 
 # 全局“实时检测”用的检测器
 global_detector = DrowningDetector(
@@ -194,11 +194,17 @@ global_detector = DrowningDetector(
     yolo_weights="yolov8l.pt",
     skip_frames=10,
     padding=20,
-    conf_thres=0.3,
+    conf_thres=0.1,
     iou_thres=0.4,
     alert_threshold=0.95,
     history_length=6
 )
+
+# 用于标识用户是否“停止实时检测”
+stop_realtime = False
+
+# 用于标识是否“停止离线处理”
+stop_offline = False
 
 
 @app.route("/")
@@ -234,8 +240,8 @@ def upload_video():
 def result_page():
     """
     显示上传后的视频名，并提供：
-    1) 实时播放 (IMG MJPEG)
-    2) 离线处理 (带进度条)，完成后可下载
+    - Option 1: 实时播放 (start/stop)
+    - Option 2: 离线处理 (带进度条 + stop)
     """
     filename = request.args.get("file")
     if not filename:
@@ -256,6 +262,10 @@ def processing_stream():
     if not os.path.exists(input_path):
         return f"File not found: {filename}", 404
 
+    # 进入时先重置 stop_realtime = False
+    global stop_realtime
+    stop_realtime = False
+
     def gen_frames(path):
         cap = cv2.VideoCapture(path)
         # 重置 global_detector 的计数和历史
@@ -264,6 +274,11 @@ def processing_stream():
         global_detector.last_processed_frame = None
 
         while True:
+            # 如果用户请求停止
+            if stop_realtime:
+                print("[gen_frames] Stop Real-time requested.")
+                break
+
             ret, frame = cap.read()
             if not ret:
                 break
@@ -277,20 +292,34 @@ def processing_stream():
                    buffer.tobytes() + b"\r\n")
 
         cap.release()
+        print("[gen_frames] Real-time stream ended.")
 
     return Response(gen_frames(input_path),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
-# ---------------- 进度条相关路由 ----------------
+@app.route("/stop_realtime", methods=["POST"])
+def stop_realtime_route():
+    """
+    前端点击“Stop Real-time”时调用此接口，
+    后端设置 stop_realtime = True，使推流生成器退出
+    """
+    global stop_realtime
+    stop_realtime = True
+    return jsonify({"status": "stopping"})
+
+
+# ---------------- 进度条+离线处理相关路由 ----------------
 @app.route("/download_processed")
 def download_processed():
     """
-    异步离线处理：更新进度进度条 -> 处理完成后可下载
-    这里不直接send_file，而是用progress_status表示状态
-    前端JS每隔1秒轮询 /process_status
+    异步离线处理：更新进度 -> 完成后可下载
+    1) 重置progress
+    2) 开线程
+    3) 返回JSON
+    前端JS定时轮询/process_status
     """
-    global progress_status
+    global progress_status, stop_offline
     filename = request.args.get("file")
     if not filename:
         return jsonify({"error": "Missing file parameter"}), 400
@@ -303,17 +332,30 @@ def download_processed():
     output_path = os.path.join("outputs", f"processed_{filename}")
 
     # 重置进度
-    progress_status = {"progress": 0, "done": False, "filename": filename}
+    progress_status = {"progress": 0, "done": False, "filename": filename, "stopped": False}
+    stop_offline = False  # 重置“停止”状态
 
-    # 开线程处理，不阻塞 Flask
+    # 开线程处理
     threading.Thread(target=process_video_offline, args=(input_path, output_path)).start()
 
     return jsonify({"status": "processing", "filename": filename})
 
 
+@app.route("/stop_offline", methods=["POST"])
+def stop_offline_route():
+    """
+    前端点击“Stop Offline”时调用此接口
+    后端设置 stop_offline = True, 并标记progress["stopped"] = True
+    """
+    global stop_offline, progress_status
+    stop_offline = True
+    progress_status["stopped"] = True
+    return jsonify({"status": "stopping"})
+
+
 @app.route("/process_status")
 def process_status_api():
-    """ 前端轮询进度条时，会请求这里 """
+    """ 前端轮询进度时，会请求这里 """
     global progress_status
     return jsonify(progress_status)
 
@@ -321,8 +363,9 @@ def process_status_api():
 def process_video_offline(input_path, output_path):
     """
     在后台线程中，离线处理视频 => 写出 processed_{filename}.mp4
+    如用户调用 /stop_offline 则中断处理
     """
-    global progress_status
+    global progress_status, stop_offline
 
     cap = cv2.VideoCapture(input_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -347,9 +390,14 @@ def process_video_offline(input_path, output_path):
     )
 
     while True:
+        if stop_offline:
+            print("[process_video_offline] Stopped by user.")
+            break
+
         ret, frame = cap.read()
         if not ret:
             break
+
         processed = local_detector.process_frame(frame)
         out.write(processed)
 
@@ -359,9 +407,14 @@ def process_video_offline(input_path, output_path):
     cap.release()
     out.release()
 
-    progress_status["progress"] = 100
-    progress_status["done"] = True
-    print("[process_video_offline] Done ->", output_path)
+    # 如果用户没stop，算完成
+    if not stop_offline:
+        progress_status["progress"] = 100
+        progress_status["done"] = True
+        print("[process_video_offline] Done ->", output_path)
+    else:
+        # 用户中途 stop，文件只处理一部分
+        print("[process_video_offline] Processing was stopped. Partial file at:", output_path)
 
 
 # =================== 启动 ===================
