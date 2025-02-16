@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>Upload Video</title>
+  <meta charset="utf-8"/>
+  <title>Upload Video</title>
 </head>
 <body>
-    <h1>Upload Video for Processing</h1>
-    <form action="/upload" method="POST" enctype="multipart/form-data">
-        <label for="videoFile">Select a video:</label>
-        <input type="file" name="video" id="videoFile" accept="video/*" />
-        <button type="submit">Upload</button>
-    </form>
-    <p><a href="/">Back to Home</a></p>
+  <h1>Upload Video</h1>
+  <form action="{{ url_for('upload_video') }}" method="POST" enctype="multipart/form-data">
+    <label for="videoFile">Choose a video:</label>
+    <input type="file" name="video" id="videoFile" accept="video/*"/>
+    <button type="submit">Upload</button>
+  </form>
 </body>
 </html>

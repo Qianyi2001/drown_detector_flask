@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Result Page</title>
+</head>
+<body>
+  <h1>Video Uploaded Successfully</h1>
+
+  <!-- filename 由后端传递 -->
+  <p>File name: {{ filename }}</p>
+
+  <p><b>Option 1:</b> Real-time Processing Stream</p>
+  <!-- 点击后跳转到 /processing_stream?file=... 用 <img src=""> 或者 直接用链接也可 -->
+  <img src="{{ url_for('processing_stream') }}?file={{ filename }}" width="720"/>
+
+  <p><b>Option 2:</b> Download Processed Video</p>
+  <a href="{{ url_for('download_processed') }}?file={{ filename }}">Download Processed MP4</a>
+
+  <p><a href="{{ url_for('index') }}">Back to Home</a></p>
+</body>
+</html>
