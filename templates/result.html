@@ -1,23 +1,83 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>Result Page</title>
-</head>
-<body>
-  <h1>Video Uploaded Successfully</h1>
+{% extends 'base.html' %}
+{% block title %}Processing Result{% endblock %}
 
-  <!-- filename 由后端传递 -->
-  <p>File name: {{ filename }}</p>
+{% block scripts %}
+{{ super() }}
+<script>
+  function startProcessing(filename) {
+    const progressContainer = document.getElementById("progressContainer");
+    const progressBar = document.getElementById("progressBar");
+    const progressLabel = document.getElementById("progressLabel");
+    const downloadLink = document.getElementById("downloadLink");
 
-  <p><b>Option 1:</b> Real-time Processing Stream</p>
-  <!-- 点击后跳转到 /processing_stream?file=... 用 <img src=""> 或者 直接用链接也可 -->
-  <img src="{{ url_for('processing_stream') }}?file={{ filename }}" width="720"/>
+    // 显示进度条
+    progressContainer.style.display = "block";
+    progressBar.style.width = "0%";
+    progressLabel.textContent = "0%";
+    downloadLink.style.display = "none";
 
-  <p><b>Option 2:</b> Download Processed Video</p>
-  <a href="{{ url_for('download_processed') }}?file={{ filename }}">Download Processed MP4</a>
+    // 发请求到 /download_processed?file=xxx
+    fetch(`/download_processed?file=${filename}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === "processing") {
+          checkProgress();
+        }
+      });
+  }
 
-  <p><a href="{{ url_for('index') }}">Back to Home</a></p>
-</body>
-</html>
+  function checkProgress() {
+    fetch("/process_status")
+      .then(response => response.json())
+      .then(data => {
+        const progressBar = document.getElementById("progressBar");
+        const progressLabel = document.getElementById("progressLabel");
+        const downloadLink = document.getElementById("downloadLink");
 
+        progressBar.style.width = data.progress + "%";
+        progressLabel.textContent = data.progress + "%";
+
+        if (data.done) {
+          progressLabel.textContent = "Processing Complete!";
+          downloadLink.href = `/outputs/processed_${data.filename}`;
+          downloadLink.style.display = "inline-block";
+        } else {
+          setTimeout(checkProgress, 1000); // 1秒后再刷新
+        }
+      });
+  }
+</script>
+{% endblock %}
+
+{% block body %}
+<h1>Video Uploaded Successfully</h1>
+<p>File name: <strong>{{ filename }}</strong></p>
+
+<div class="my-4">
+  <h4>Option 1: Real-time Processing Stream</h4>
+  <img src="{{ url_for('processing_stream') }}?file={{ filename }}"
+       class="img-fluid border" alt="Realtime Stream"/>
+</div>
+
+<div class="my-4">
+  <h4>Option 2: Offline Process with Progress</h4>
+  <button class="btn btn-primary" onclick="startProcessing('{{ filename }}')">
+    Start Processing
+  </button>
+
+  <!-- 进度条 -->
+  <div class="mt-3" id="progressContainer" style="display:none;">
+    <div class="progress" style="height: 25px;">
+      <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+           role="progressbar" style="width: 0%;">
+        <span id="progressLabel"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 下载链接(处理完再显示) -->
+  <a id="downloadLink" class="btn btn-success mt-3" style="display:none;">Download Processed Video</a>
+</div>
+
+<a href="{{ url_for('index') }}" class="btn btn-secondary">Back to Home</a>
+{% endblock %}
