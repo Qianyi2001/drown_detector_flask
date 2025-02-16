@@ -1,0 +1,11 @@
+flask
+flask-cors
+torch
+torchvision
+ultralytics
+opencv-python
+numpy
+pillow
+google-cloud-storage
+git+https://github.com/levan92/deep_sort_realtime.git
+
